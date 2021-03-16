@@ -6,7 +6,7 @@ import { Client } from "pg";
 //and default username and password,
 //we only need to specify the (non-default) database name.
 
-const client = new Client({ database: 'guestbook' });
+const client = new Client({ database: 'olivianeiljones' });
 
 //TODO: this request for a connection will not necessarily complete before the first HTTP request is made!
 client.connect();
@@ -26,11 +26,12 @@ app.use(express.json());
 
 //When this route is called, return the most recent 100 signatures in the db
 app.get("/signatures", async (req, res) => {
-  const signatures = null; //FIXME-TASK: get signatures from db!
+  const signatures1 = await client.query('SELECT * FROM signatures'); 
+  const signatures = signatures1.rows//FIXME-TASK: get signatures from db!
   res.status(200).json({
     status: "success",
     data: {
-      signatures
+      signatures //why can't I define .rows here?? Is there a way to do this more efficiently? YES, just distinguish key/value in the pair
     },
   });
 });
@@ -38,15 +39,15 @@ app.get("/signatures", async (req, res) => {
 app.get("/signatures/:id", async (req, res) => {
   // :id indicates a "route parameter", available as req.params.id
   //  see documentation: https://expressjs.com/en/guide/routing.html
-  const id = parseInt(req.params.id); // params are always string type
+  const id = parseInt(req.params.id); // params are always string type - but why do i need this???
 
-  const signature = null;   //FIXME-TASK get the signature row from the db (match on id)
-
-  if (signature) {
+  const signature = await client.query('select * from signatures where id=$1', [req.params.id]);   //FIXME-TASK get the signature row from the db (match on id)
+  const signature1 = signature.rows
+  if (signature.rowCount === 1) { // if (signature) alone would not work!! You can't just ask whether signature exists, but whether rows for that query have been returned!!
     res.status(200).json({
       status: "success",
       data: {
-        signature,
+        signature1, //if i don't set this out as a key value pair, it will assume it is both vale AND key
       },
     });
   } else {
@@ -62,12 +63,13 @@ app.get("/signatures/:id", async (req, res) => {
 app.post("/signatures", async (req, res) => {
   const { name, message } = req.body;
   if (typeof name === "string") {
-    const createdSignature = null; //FIXME-TASK: insert the supplied signature object into the DB
+    const createdSignature = await client.query("INSERT INTO signatures(signature,message) VALUES ($1, $2) RETURNING*", //add RETURNING if you want your new row entry to be visualised in the res - otherwise nothing will be returned by client.query: createdSignature will be empty!
+      [name, message]); //FIXME-TASK: insert the supplied signature object into the DB
 
     res.status(201).json({
       status: "success",
       data: {
-        signature: createdSignature, //return the relevant data (including its db-generated id)
+        signature: createdSignature.rows, //return the relevant data (including its db-generated id)
       },
     });
   } else {
@@ -87,10 +89,11 @@ app.put("/signatures/:id", async (req, res) => {
   const id = parseInt(req.params.id);
   if (typeof name === "string") {
 
-    const result: any = null; //FIXME-TASK: update the signature with given id in the DB.
+    const result = await client.query('update signatures set signature=$1, message=$2 where id=$3 returning*', 
+      [name, message, id]); //FIXME-TASK: update the signature with given id in the DB.
 
     if (result.rowCount === 1) {
-      const updatedSignature = result.rows[0];
+      const updatedSignature = result.rows[0]; //to get a good res: specify returning* and result.rows!!!
       res.status(200).json({
         status: "success",
         data: {
@@ -119,7 +122,7 @@ app.put("/signatures/:id", async (req, res) => {
 app.delete("/signatures/:id", async (req, res) => {
   const id = parseInt(req.params.id); // params are string type
 
-  const queryResult: any = null; ////FIXME-TASK: delete the row with given id from the db  
+  const queryResult: any = await client.query('delete from signatures where id=$1', [id]); ////FIXME-TASK: delete the row with given id from the db  
   const didRemove = queryResult.rowCount === 1;
 
   if (didRemove) {
